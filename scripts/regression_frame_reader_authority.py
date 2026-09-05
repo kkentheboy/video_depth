@@ -38,6 +38,22 @@ def imports_from(tree: ast.Module, module: str) -> set[str]:
     return names
 
 
+def has_nameerror_frame_fallback(tree: ast.Module) -> bool:
+    for node in tree.body:
+        if not isinstance(node, ast.Try):
+            continue
+        for handler in node.handlers:
+            handler_name = handler.type.id if isinstance(handler.type, ast.Name) else ""
+            if handler_name != "NameError":
+                continue
+            if any(
+                isinstance(item, ast.FunctionDef) and item.name == "read_video_frame_bgr"
+                for item in handler.body
+            ):
+                return True
+    return False
+
+
 def main() -> None:
     if not READERS.is_file():
         raise SystemExit("depth_pipeline/frame_readers.py is missing")
@@ -56,6 +72,14 @@ def main() -> None:
     worker_imports = imports_from(worker_tree, "depth_pipeline.frame_readers")
     if not MOVED.issubset(worker_imports):
         raise SystemExit(f"workers missing frame-reader imports: {sorted(MOVED - worker_imports)}")
+
+    core_imports = imports_from(worker_tree, "depth_fusion_core")
+    if "read_video_frame_bgr" not in core_imports:
+        raise SystemExit("workers must use the authoritative depth_fusion_core read_video_frame_bgr")
+    if "read_video_frame_bgr" in top_level_defs(worker_tree):
+        raise SystemExit("workers must not define a local read_video_frame_bgr fallback")
+    if has_nameerror_frame_fallback(worker_tree):
+        raise SystemExit("dead NameError read_video_frame_bgr compatibility fallback returned")
 
     if imports_from(reader_tree, "depth_fusion_workers"):
         raise SystemExit("depth_pipeline.frame_readers must not import depth_fusion_workers")

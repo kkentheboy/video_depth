@@ -63,12 +63,6 @@ from depth_fusion_workers import (
     MeshPreviewWorker,
     SegmentationCacheWorker,
     OriginalFrameWorker,
-    DropLineEdit,
-    NoWheelSlider,
-    NoWheelSpinBox,
-    NoWheelDoubleSpinBox,
-    NoWheelComboBox,
-    PreviewImageLabel,
     LocalModelManagerDialog,
     is_structure_xyz_export_config,
     _BaseRebuildWorker,
@@ -101,7 +95,10 @@ from segmentation_pipeline.foreground import check_foreground_environment, const
 from segmentation_pipeline.mask_quality import classify_mask_quality, quality_to_meta
 from segmentation_pipeline.segmentation_cache import save_segmentation_frame, load_segmentation_frame, segmentation_frame_paths, segmentation_cache_summary
 
-from components.widgets import SliderValue, ToneWheelCard
+from components.widgets import (
+    DropLineEdit, NoWheelSlider, NoWheelSpinBox, NoWheelDoubleSpinBox, NoWheelComboBox,
+    PreviewImageLabel, SliderValue, ToneWheelCard,
+)
 
 from components.waveform import CurveWaveformPanel
 

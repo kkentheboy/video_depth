@@ -47,10 +47,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git checkout HEAD^ -- .github/workflows/source-core-gate.yml
           rm tools/apply_cache_authority_fix.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add app/depth_fusion_workers.py scripts/regression_cache_state.py tools/apply_cache_authority_fix.py
           git commit -m "fix: restore cache-state authority in workers"
           git push origin HEAD:test/source-core-contract-20260905

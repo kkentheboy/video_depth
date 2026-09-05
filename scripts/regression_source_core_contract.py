@@ -107,7 +107,6 @@ def local_function_names(tree: ast.Module) -> set[str]:
 
 
 def main() -> None:
-    # Compile-level syntax coverage for every application Python file.
     py_files = sorted(APP.rglob("*.py"))
     if not py_files:
         fail("no app Python sources found")
@@ -131,6 +130,14 @@ def main() -> None:
     missing_cache_api = sorted(CACHE_API - cache_exports)
     if missing_cache_api:
         fail("cache_state is missing required cache API: " + ", ".join(missing_cache_api))
+
+    worker_cache_imports = imports_from(workers, "depth_pipeline.cache_state")
+    missing_worker_cache_imports = sorted(CACHE_API - worker_cache_imports)
+    if missing_worker_cache_imports:
+        fail(
+            "depth_fusion_workers is not wired to authoritative cache_state APIs: "
+            + ", ".join(missing_worker_cache_imports)
+        )
 
     worker_local_functions = local_function_names(workers)
     shadowed_cache_api = sorted(CACHE_API & worker_local_functions)

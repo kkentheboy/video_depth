@@ -144,68 +144,6 @@ def _load_frame_cache_0based_first(loader, cache_root: Path, frame_index: int): 
 # 防止补丁应用顺序导致 depth_fusion_core 的公开别名没有进入本模块。
 # 预览/原图/外部参考都走这个稳定读取入口，不能再在 worker 里直接依赖一个
 # 可能未导入的全局名。
-try:
-    read_video_frame_bgr  # type: ignore[name-defined]
-except NameError:
-    def read_video_frame_bgr(path_text: str, frame_index: int):  # noqa: ANN201
-        path = str(path_text or "").strip()
-        if not path or not Path(path).is_file():
-            return None
-        if Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}:
-            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-            if img is None:
-                return None
-            if img.ndim == 2:
-                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-            return img
-
-        def _open_cap():  # noqa: ANN202
-            cap_obj = cv2.VideoCapture(path)
-            if not cap_obj.isOpened():
-                cap_obj.release()
-                return None
-            return cap_obj
-
-        idx = max(0, int(frame_index))
-        cap = _open_cap()
-        if cap is None:
-            return None
-        try:
-            from depth_fusion_core import probe_video
-            total = probe_video(path).frame_count
-            fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
-            if total > 0:
-                idx = min(idx, total - 1)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-            ok, frame = cap.read()
-            if ok and frame is not None:
-                return frame
-            if fps > 1e-3:
-                cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, idx * 1000.0 / fps))
-                ok, frame = cap.read()
-                if ok and frame is not None:
-                    return frame
-        finally:
-            cap.release()
-
-        for back in (8, 24, 60, 120, 240):
-            start = max(0, idx - back)
-            cap = _open_cap()
-            if cap is None:
-                return None
-            try:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-                frame = None
-                ok = False
-                for _ in range(start, idx + 1):
-                    ok, frame = cap.read()
-                    if not ok or frame is None:
-                        break
-                if ok and frame is not None:
-                    return frame
-            finally:
-                cap.release()
-        return None
 
 
 def _mask_to_hw(mask: Optional[np.ndarray], shape_hw: tuple[int, int]) -> Optional[np.ndarray]:

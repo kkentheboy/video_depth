@@ -1,0 +1,20 @@
+name: Source Core Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main, test/source-core-contract-20260905]
+
+jobs:
+  source-core-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile application sources
+        run: python -m compileall -q app scripts/regression_source_core_contract.py
+      - name: Verify core import and cache authority contracts
+        run: python scripts/regression_source_core_contract.py

@@ -1,0 +1,192 @@
+name: Extract Model Manager Temp
+
+on:
+  push:
+    branches: [refactor/extract-model-manager-20260905]
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/extract-model-manager-20260905
+          fetch-depth: 0
+
+      - name: Extract model manager from worker module
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import ast
+          from pathlib import Path
+
+          workers_path = Path('app/depth_fusion_workers.py')
+          ui_path = Path('app/depth_fusion_ui.py')
+          target_path = Path('app/components/model_manager.py')
+
+          names = [
+              'safe_rmtree',
+              'collect_unused_model_candidates',
+              'delete_unused_models',
+              'LocalModelManagerDialog',
+          ]
+          target_symbols = set(names)
+
+          workers = workers_path.read_text(encoding='utf-8')
+          ui = ui_path.read_text(encoding='utf-8')
+          tree = ast.parse(workers)
+
+          defs: dict[str, ast.AST] = {}
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in target_symbols:
+                  if node.name in defs:
+                      raise SystemExit(f'duplicate target definition: {node.name}')
+                  defs[node.name] = node
+          missing = target_symbols - set(defs)
+          if missing:
+              raise SystemExit(f'missing model-manager definitions: {sorted(missing)}')
+          if target_path.exists():
+              raise SystemExit('app/components/model_manager.py already exists')
+
+          spans: list[tuple[int, int]] = []
+          for name in names:
+              node = defs[name]
+              end = getattr(node, 'end_lineno', None)
+              if end is None:
+                  raise SystemExit(f'AST end_lineno unavailable for {name}')
+              spans.append((node.lineno, end))
+
+          def inside_moved(line: int) -> bool:
+              return any(start <= line <= end for start, end in spans)
+
+          leaks: list[tuple[str, int]] = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in target_symbols:
+                  if not inside_moved(node.lineno):
+                      leaks.append((node.id, node.lineno))
+          if leaks:
+              raise SystemExit(f'model-manager symbols used by worker code outside extraction block: {leaks}')
+
+          lines = workers.splitlines(keepends=True)
+          extracted: dict[str, str] = {}
+          ranges: list[tuple[int, int, str]] = []
+          for name in names:
+              node = defs[name]
+              start = node.lineno - 1
+              end = node.end_lineno
+              extracted[name] = ''.join(lines[start:end]).rstrip() + '\n\n'
+              ranges.append((start, end, name))
+
+          for start, end, _name in sorted(ranges, reverse=True):
+              del lines[start:end]
+          workers_new = ''.join(lines)
+
+          module_header = '''# -*- coding: utf-8 -*-\nfrom __future__ import annotations\n\nimport os\nimport shutil\nfrom pathlib import Path\n\nfrom PySide6.QtWidgets import (\n    QDialog, QWidget, QVBoxLayout, QLabel, QPlainTextEdit, QHBoxLayout,\n    QPushButton, QMessageBox,\n)\n\nfrom depth_fusion_core import (\n    APP_NAME, PROJECT_DIR, PROJECT_HF_HUB, PROJECT_MODELS_DIR,\n    clear_memory_model_cache, directory_size_bytes, format_bytes,\n)\n\n\n'''
+          target_text = module_header + ''.join(extracted[name] for name in names)
+
+          worker_import = '    LocalModelManagerDialog,\n'
+          if ui.count(worker_import) != 1:
+              raise SystemExit('UI worker import for LocalModelManagerDialog must occur exactly once')
+          ui_new = ui.replace(worker_import, '', 1)
+
+          insertion = 'from components.widgets import ('
+          if ui_new.count(insertion) != 1:
+              raise SystemExit('components.widgets import insertion point mismatch')
+          ui_new = ui_new.replace(
+              insertion,
+              'from components.model_manager import LocalModelManagerDialog\n\n' + insertion,
+              1,
+          )
+
+          workers_path.write_text(workers_new, encoding='utf-8')
+          target_path.write_text(target_text, encoding='utf-8')
+          ui_path.write_text(ui_new, encoding='utf-8')
+          PY
+
+          python -m compileall -q app
+
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          root = Path('app')
+          workers_path = root / 'depth_fusion_workers.py'
+          model_path = root / 'components' / 'model_manager.py'
+          ui_path = root / 'depth_fusion_ui.py'
+          targets = {
+              'safe_rmtree', 'collect_unused_model_candidates',
+              'delete_unused_models', 'LocalModelManagerDialog',
+          }
+
+          def defs(path: Path):
+              tree = ast.parse(path.read_text(encoding='utf-8'))
+              return {
+                  node.name
+                  for node in tree.body
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+              }, tree
+
+          worker_defs, worker_tree = defs(workers_path)
+          model_defs, model_tree = defs(model_path)
+          if worker_defs & targets:
+              raise SystemExit(f'model-manager definitions remain in workers: {sorted(worker_defs & targets)}')
+          if not targets.issubset(model_defs):
+              raise SystemExit(f'model-manager definitions missing: {sorted(targets - model_defs)}')
+
+          for path in root.rglob('*.py'):
+              tree = ast.parse(path.read_text(encoding='utf-8'))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.ImportFrom) and node.module == 'depth_fusion_workers':
+                      bad = targets & {alias.name for alias in node.names}
+                      if bad:
+                          raise SystemExit(f'{path}: imports model-manager symbols from workers: {sorted(bad)}')
+
+          model_imports_workers = [
+              node for node in model_tree.body
+              if isinstance(node, ast.ImportFrom) and node.module == 'depth_fusion_workers'
+          ]
+          if model_imports_workers:
+              raise SystemExit('components.model_manager must not depend on depth_fusion_workers')
+
+          ui_tree = ast.parse(ui_path.read_text(encoding='utf-8'))
+          ui_model_names = set()
+          for node in ui_tree.body:
+              if isinstance(node, ast.ImportFrom) and node.module == 'components.model_manager':
+                  ui_model_names.update(alias.name for alias in node.names)
+          if 'LocalModelManagerDialog' not in ui_model_names:
+              raise SystemExit('depth_fusion_ui does not import LocalModelManagerDialog from components.model_manager')
+
+          widget_bases = {
+              'QWidget', 'QDialog', 'QLabel', 'QLineEdit', 'QSlider', 'QSpinBox',
+              'QDoubleSpinBox', 'QComboBox', 'QMainWindow',
+          }
+          for node in worker_tree.body:
+              if not isinstance(node, ast.ClassDef):
+                  continue
+              base_names = {
+                  base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute) else ''
+                  for base in node.bases
+              }
+              if base_names & widget_bases:
+                  raise SystemExit(f'worker module still owns QWidget-derived class {node.name}: {sorted(base_names & widget_bases)}')
+
+          print('video_depth model manager extraction: PASS')
+          PY
+
+      - name: Commit model manager extraction and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/extract-model-manager-temp.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/depth_fusion_workers.py app/depth_fusion_ui.py app/components/model_manager.py .github/workflows/extract-model-manager-temp.yml
+          git commit -m 'refactor: extract local model manager from workers'
+          git push origin HEAD:refactor/extract-model-manager-20260905

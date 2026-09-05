@@ -34,6 +34,9 @@ jobs:
       - name: Verify numeric resolver consistency
         run: python -m pip check
 
+      - name: Verify cache-state round trip
+        run: python scripts/regression_cache_state.py
+
   declared-base-environment:
     runs-on: ubuntu-latest
     timeout-minutes: 20

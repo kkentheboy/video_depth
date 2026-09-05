@@ -57,6 +57,17 @@ from depth_fusion_core import (
 # Private helpers are not part of the explicit public import block, so import
 # the ones this module needs directly.
 from depth_fusion_core import _resize_mask_like, _external_depth_gray01
+from depth_pipeline.cache_state import (
+    alpha_cache_signature,
+    cache_entry_matches,
+    depth_cache_signature,
+    normal_cache_signature,
+    record_cache_error,
+    record_cache_frame,
+    summarize_cache_validation,
+    validate_geometry_cache,
+    write_pipeline_state,
+)
 from common.cache import frame_stem
 from common.paths import pointcloud_export_root
 from geometry_fusion.mesh_sampling import sample_mesh_surface
@@ -100,21 +111,6 @@ def cleanup_stale_output_frames(*a, **k): return None
 def clean_output_dir_frames(*a, **k): return None
 def existing_frame_is_complete(*a, **k): return False
 def validate_pointcloud_outputs(*a, **k): return {}
-def write_pipeline_state(root: Path, cfg: JobConfig | None = None, status: str = "", extra: dict | None = None) -> None:
-    try:
-        root = Path(root); root.mkdir(parents=True, exist_ok=True)
-        with (root / "pipeline_state.json").open("w", encoding="utf-8") as f:
-            json.dump({"status": status, "extra": extra or {}}, f, ensure_ascii=False, indent=2, default=str)
-    except Exception:
-        pass
-def alpha_cache_signature(*a, **k): return ""
-def cache_entry_matches(*a, **k): return False
-def depth_cache_signature(*a, **k): return ""
-def normal_cache_signature(*a, **k): return ""
-def record_cache_error(*a, **k): return None
-def record_cache_frame(*a, **k): return None
-def summarize_cache_validation(*a, **k): return ""
-def validate_geometry_cache(*a, **k): return {}
 def write_alpha_debug_cache(alpha: np.ndarray, output_npy: Path, output_png8: Path | None = None) -> None:
     save_npy_safely(Path(output_npy), np.asarray(alpha, dtype=np.float32))
 

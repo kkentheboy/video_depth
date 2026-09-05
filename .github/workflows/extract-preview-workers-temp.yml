@@ -1,0 +1,163 @@
+name: Extract Preview Workers Temp
+
+on:
+  push:
+    branches: [refactor/extract-preview-workers-20260905]
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/extract-preview-workers-20260905
+          fetch-depth: 0
+
+      - name: Extract preview and original-frame workers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import ast
+          from pathlib import Path
+
+          workers_path = Path('app/depth_fusion_workers.py')
+          ui_path = Path('app/depth_fusion_ui.py')
+          target_path = Path('app/preview_workers.py')
+          names = ['PreviewWorker', 'OriginalFrameWorker', '_BaseRebuildWorker']
+          targets = set(names)
+
+          workers = workers_path.read_text(encoding='utf-8')
+          ui = ui_path.read_text(encoding='utf-8')
+          tree = ast.parse(workers)
+
+          defs = {
+              node.name: node
+              for node in tree.body
+              if isinstance(node, ast.ClassDef) and node.name in targets
+          }
+          missing = targets - set(defs)
+          if missing:
+              raise SystemExit(f'missing preview worker definitions: {sorted(missing)}')
+          if target_path.exists():
+              raise SystemExit('app/preview_workers.py already exists')
+
+          spans = []
+          for name in names:
+              node = defs[name]
+              if node.end_lineno is None:
+                  raise SystemExit(f'end_lineno unavailable for {name}')
+              spans.append((node.lineno, node.end_lineno, name))
+
+          def inside_target(line: int) -> bool:
+              return any(start <= line <= end for start, end, _ in spans)
+
+          external_uses = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in targets:
+                  if not inside_target(node.lineno):
+                      external_uses.append((node.id, node.lineno))
+          if external_uses:
+              raise SystemExit(f'preview worker symbols used inside worker module outside definitions: {external_uses}')
+
+          lines = workers.splitlines(keepends=True)
+          extracted = {}
+          ranges = []
+          for name in names:
+              node = defs[name]
+              start = node.lineno - 1
+              end = node.end_lineno
+              extracted[name] = ''.join(lines[start:end]).rstrip() + '\n\n'
+              ranges.append((start, end, name))
+          for start, end, _name in sorted(ranges, reverse=True):
+              del lines[start:end]
+          workers_new = ''.join(lines)
+
+          module_header = '''# -*- coding: utf-8 -*-\nfrom __future__ import annotations\n\nimport traceback\nfrom typing import Optional\n\nimport cv2\nimport numpy as np\nfrom PySide6.QtCore import QObject, Signal\n\nfrom depth_fusion_core import (\n    JobConfig, event_exception, event_log, make_base_gray_for_levels, read_video_frame_bgr,\n)\n\n\n'''
+          target_text = module_header + ''.join(extracted[name] for name in names)
+
+          for name in names:
+              line = f'    {name},\n'
+              if ui.count(line) != 1:
+                  raise SystemExit(f'UI worker import line mismatch for {name}: {ui.count(line)}')
+              ui = ui.replace(line, '', 1)
+
+          marker = 'from depth_fusion_workers import (\n'
+          if ui.count(marker) != 1:
+              raise SystemExit('depth_fusion_workers import insertion marker mismatch')
+          preview_import = 'from preview_workers import PreviewWorker, OriginalFrameWorker, _BaseRebuildWorker\n'
+          ui_new = ui.replace(marker, preview_import + marker, 1)
+
+          workers_path.write_text(workers_new, encoding='utf-8')
+          target_path.write_text(target_text, encoding='utf-8')
+          ui_path.write_text(ui_new, encoding='utf-8')
+          PY
+
+          python -m compileall -q app
+
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          root = Path('app')
+          workers = root / 'depth_fusion_workers.py'
+          preview = root / 'preview_workers.py'
+          ui = root / 'depth_fusion_ui.py'
+          targets = {'PreviewWorker', 'OriginalFrameWorker', '_BaseRebuildWorker'}
+
+          def parse(path):
+              return ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+          def defs(tree):
+              return {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+          def imported(tree, module):
+              out = set()
+              for node in tree.body:
+                  if isinstance(node, ast.ImportFrom) and node.module == module:
+                      out.update(alias.name for alias in node.names)
+              return out
+
+          wt = parse(workers)
+          pt = parse(preview)
+          ut = parse(ui)
+          if defs(wt) & targets:
+              raise SystemExit(f'preview workers remain in worker monolith: {sorted(defs(wt) & targets)}')
+          missing = targets - defs(pt)
+          if missing:
+              raise SystemExit(f'preview workers missing from new module: {sorted(missing)}')
+          if imported(pt, 'depth_fusion_workers'):
+              raise SystemExit('preview_workers must not import depth_fusion_workers')
+          ui_imports = imported(ut, 'preview_workers')
+          if not targets.issubset(ui_imports):
+              raise SystemExit(f'UI missing preview worker imports: {sorted(targets - ui_imports)}')
+          for path in root.rglob('*.py'):
+              tree = parse(path)
+              bad = targets & imported(tree, 'depth_fusion_workers')
+              if bad:
+                  raise SystemExit(f'{path}: imports moved preview workers from monolith: {sorted(bad)}')
+
+          expected_bases = {name: 'QObject' for name in targets}
+          class_map = {node.name: node for node in pt.body if isinstance(node, ast.ClassDef)}
+          for name, expected in expected_bases.items():
+              bases = {base.id for base in class_map[name].bases if isinstance(base, ast.Name)}
+              if expected not in bases:
+                  raise SystemExit(f'{name} base changed: {sorted(bases)}')
+
+          print('video_depth preview worker extraction: PASS')
+          PY
+
+      - name: Commit preview worker extraction and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/extract-preview-workers-temp.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/depth_fusion_workers.py app/depth_fusion_ui.py app/preview_workers.py .github/workflows/extract-preview-workers-temp.yml
+          git commit -m 'refactor: extract preview workers from monolith'
+          git push origin HEAD:refactor/extract-preview-workers-20260905

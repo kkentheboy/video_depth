@@ -1,0 +1,187 @@
+name: Move UI Primitives Temp
+
+on:
+  push:
+    branches: [refactor/move-ui-primitives-20260905]
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/move-ui-primitives-20260905
+          fetch-depth: 0
+
+      - name: Extract UI primitives from worker module
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import ast
+          from pathlib import Path
+
+          workers_path = Path('app/depth_fusion_workers.py')
+          widgets_path = Path('app/components/widgets.py')
+          ui_path = Path('app/depth_fusion_ui.py')
+
+          moved = [
+              'DropLineEdit',
+              'NoWheelSlider',
+              'NoWheelSpinBox',
+              'NoWheelDoubleSpinBox',
+              'NoWheelComboBox',
+              'PreviewImageLabel',
+          ]
+
+          workers = workers_path.read_text(encoding='utf-8')
+          widgets = widgets_path.read_text(encoding='utf-8')
+          ui = ui_path.read_text(encoding='utf-8')
+
+          tree = ast.parse(workers)
+          nodes = {
+              node.name: node
+              for node in tree.body
+              if isinstance(node, ast.ClassDef) and node.name in moved
+          }
+          missing = [name for name in moved if name not in nodes]
+          if missing:
+              raise SystemExit(f'missing worker UI classes: {missing}')
+          if len(nodes) != len(moved):
+              raise SystemExit('unexpected duplicate UI class definitions')
+          for name in moved:
+              if f'class {name}(' in widgets:
+                  raise SystemExit(f'{name} already exists in components/widgets.py')
+
+          lines = workers.splitlines(keepends=True)
+          extracted: dict[str, str] = {}
+          ranges: list[tuple[int, int, str]] = []
+          for name in moved:
+              node = nodes[name]
+              if node.end_lineno is None:
+                  raise SystemExit(f'AST end_lineno unavailable for {name}')
+              start = node.lineno - 1
+              end = node.end_lineno
+              extracted[name] = ''.join(lines[start:end]).rstrip() + '\n\n'
+              ranges.append((start, end, name))
+
+          for start, end, _name in sorted(ranges, reverse=True):
+              del lines[start:end]
+          workers_new = ''.join(lines)
+          direct_import = 'from PySide6.QtWidgets import QDoubleSpinBox\n\n'
+          if workers_new.count(direct_import) != 1:
+              raise SystemExit('expected direct QDoubleSpinBox import exactly once')
+          workers_new = workers_new.replace(direct_import, '', 1)
+
+          old_imports = (
+              'from PySide6.QtCore import Qt, Signal, QRectF, QPointF\n'
+              'from PySide6.QtGui import QCursor, QPainter, QPainterPath, QColor, QPen, QLinearGradient, QImage\n'
+              'from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, QPushButton\n\n'
+              'from depth_fusion_workers import NoWheelSlider\n'
+          )
+          new_imports = (
+              'from PySide6.QtCore import Qt, Signal, QRectF, QPointF\n'
+              'from PySide6.QtGui import (\n'
+              '    QCursor, QPainter, QPainterPath, QColor, QPen, QLinearGradient, QImage,\n'
+              '    QDragEnterEvent, QDropEvent, QPixmap,\n'
+              ')\n'
+              'from PySide6.QtWidgets import (\n'
+              '    QApplication, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, QPushButton,\n'
+              '    QSlider, QSpinBox, QDoubleSpinBox, QComboBox,\n'
+              ')\n'
+          )
+          if widgets.count(old_imports) != 1:
+              raise SystemExit('components/widgets.py import authority block mismatch')
+          widgets_new = widgets.replace(old_imports, new_imports, 1)
+
+          marker = 'class SliderValue(QWidget):\n'
+          if widgets_new.count(marker) != 1:
+              raise SystemExit('SliderValue insertion marker mismatch')
+          moved_block = ''.join(extracted[name] for name in moved)
+          widgets_new = widgets_new.replace(marker, moved_block + '\n' + marker, 1)
+
+          for name in moved:
+              worker_line = f'    {name},\n'
+              if ui.count(worker_line) != 1:
+                  raise SystemExit(f'UI worker import line mismatch for {name}')
+              ui = ui.replace(worker_line, '', 1)
+
+          old_widget_import = 'from components.widgets import SliderValue, ToneWheelCard\n'
+          new_widget_import = (
+              'from components.widgets import (\n'
+              '    DropLineEdit, NoWheelSlider, NoWheelSpinBox, NoWheelDoubleSpinBox, NoWheelComboBox,\n'
+              '    PreviewImageLabel, SliderValue, ToneWheelCard,\n'
+              ')\n'
+          )
+          if ui.count(old_widget_import) != 1:
+              raise SystemExit('UI components.widgets import block mismatch')
+          ui_new = ui.replace(old_widget_import, new_widget_import, 1)
+
+          workers_path.write_text(workers_new, encoding='utf-8')
+          widgets_path.write_text(widgets_new, encoding='utf-8')
+          ui_path.write_text(ui_new, encoding='utf-8')
+          PY
+
+          python -m compileall -q app
+
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          moved = {
+              'DropLineEdit', 'NoWheelSlider', 'NoWheelSpinBox',
+              'NoWheelDoubleSpinBox', 'NoWheelComboBox', 'PreviewImageLabel',
+          }
+          workers = Path('app/depth_fusion_workers.py').read_text(encoding='utf-8')
+          widgets = Path('app/components/widgets.py').read_text(encoding='utf-8')
+          ui = Path('app/depth_fusion_ui.py').read_text(encoding='utf-8')
+
+          worker_classes = {
+              n.name for n in ast.parse(workers).body if isinstance(n, ast.ClassDef)
+          }
+          widget_classes = {
+              n.name for n in ast.parse(widgets).body if isinstance(n, ast.ClassDef)
+          }
+          if worker_classes & moved:
+              raise SystemExit(f'UI classes remain in worker module: {sorted(worker_classes & moved)}')
+          missing = moved - widget_classes
+          if missing:
+              raise SystemExit(f'UI classes missing from components.widgets: {sorted(missing)}')
+
+          for path in Path('app').rglob('*.py'):
+              tree = ast.parse(path.read_text(encoding='utf-8'))
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.ImportFrom) and node.module == 'depth_fusion_workers':
+                      bad = moved & {alias.name for alias in node.names}
+                      if bad:
+                          raise SystemExit(f'{path}: imports moved UI classes from workers: {sorted(bad)}')
+
+          if 'from depth_fusion_workers import NoWheelSlider' in widgets:
+              raise SystemExit('components.widgets still depends on worker UI')
+          required_ui = moved | {'SliderValue', 'ToneWheelCard'}
+          imported = set()
+          for node in ast.parse(ui).body:
+              if isinstance(node, ast.ImportFrom) and node.module == 'components.widgets':
+                  imported.update(alias.name for alias in node.names)
+          if not required_ui.issubset(imported):
+              raise SystemExit(f'UI components import missing: {sorted(required_ui - imported)}')
+
+          print('video_depth UI primitive extraction: PASS')
+          PY
+
+      - name: Commit extracted UI primitives and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/move-ui-primitives-temp.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/depth_fusion_workers.py app/depth_fusion_ui.py app/components/widgets.py .github/workflows/move-ui-primitives-temp.yml
+          git commit -m 'refactor: move UI primitives out of workers'
+          git push origin HEAD:refactor/move-ui-primitives-20260905

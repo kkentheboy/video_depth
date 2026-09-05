@@ -1,0 +1,142 @@
+name: Extract Frame Readers Temp
+
+on:
+  push:
+    branches: [refactor/extract-frame-readers-20260905]
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/extract-frame-readers-20260905
+          fetch-depth: 0
+
+      - name: Extract sequential frame readers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import ast
+          from pathlib import Path
+
+          workers_path = Path('app/depth_fusion_workers.py')
+          target_path = Path('app/depth_pipeline/frame_readers.py')
+          workers = workers_path.read_text(encoding='utf-8')
+          tree = ast.parse(workers)
+
+          names = [
+              '_resize_gray01_for_worker',
+              '_SequentialBgrFrameReader',
+              '_SequentialRgbaFrameReader',
+          ]
+          targets = set(names)
+          defs: dict[str, ast.AST] = {}
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in targets:
+                  if node.name in defs:
+                      raise SystemExit(f'duplicate target definition: {node.name}')
+                  defs[node.name] = node
+          missing = targets - set(defs)
+          if missing:
+              raise SystemExit(f'missing frame-reader definitions: {sorted(missing)}')
+          if target_path.exists():
+              raise SystemExit('frame_readers.py already exists')
+
+          lines = workers.splitlines(keepends=True)
+          extracted: dict[str, str] = {}
+          ranges: list[tuple[int, int, str]] = []
+          for name in names:
+              node = defs[name]
+              if node.end_lineno is None:
+                  raise SystemExit(f'end_lineno unavailable for {name}')
+              start = node.lineno - 1
+              end = node.end_lineno
+              extracted[name] = ''.join(lines[start:end]).rstrip() + '\n\n'
+              ranges.append((start, end, name))
+          for start, end, _name in sorted(ranges, reverse=True):
+              del lines[start:end]
+          workers_new = ''.join(lines)
+
+          import_line = (
+              'from depth_pipeline.frame_readers import (\n'
+              '    _resize_gray01_for_worker,\n'
+              '    _SequentialBgrFrameReader,\n'
+              '    _SequentialRgbaFrameReader,\n'
+              ')\n'
+          )
+          marker = 'from common.cache import frame_stem\n'
+          if workers_new.count(marker) != 1:
+              raise SystemExit('frame reader import insertion marker mismatch')
+          workers_new = workers_new.replace(marker, import_line + marker, 1)
+
+          module_header = '''# -*- coding: utf-8 -*-\nfrom __future__ import annotations\n\nfrom pathlib import Path\nimport shutil\nimport subprocess\nfrom typing import Optional\n\nimport cv2\nimport numpy as np\n\nfrom depth_fusion_core import probe_video, read_video_frame_bgr, video_has_real_alpha\n\n\n'''
+          target_text = module_header + ''.join(extracted[name] for name in names)
+
+          workers_path.write_text(workers_new, encoding='utf-8')
+          target_path.write_text(target_text, encoding='utf-8')
+          PY
+
+          python -m compileall -q app
+
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          workers = Path('app/depth_fusion_workers.py')
+          readers = Path('app/depth_pipeline/frame_readers.py')
+          targets = {
+              '_resize_gray01_for_worker',
+              '_SequentialBgrFrameReader',
+              '_SequentialRgbaFrameReader',
+          }
+
+          def parse(path):
+              return ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+          def defs(tree):
+              return {
+                  node.name
+                  for node in tree.body
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+              }
+          def imports_from(tree, module):
+              out = set()
+              for node in tree.body:
+                  if isinstance(node, ast.ImportFrom) and node.module == module:
+                      out.update(alias.name for alias in node.names)
+              return out
+
+          worker_tree = parse(workers)
+          reader_tree = parse(readers)
+          leaked = targets & defs(worker_tree)
+          if leaked:
+              raise SystemExit(f'frame reader definitions remain in workers: {sorted(leaked)}')
+          missing = targets - defs(reader_tree)
+          if missing:
+              raise SystemExit(f'frame reader definitions missing in new module: {sorted(missing)}')
+          imported = imports_from(worker_tree, 'depth_pipeline.frame_readers')
+          if not targets.issubset(imported):
+              raise SystemExit(f'workers missing frame-reader imports: {sorted(targets - imported)}')
+          if imports_from(reader_tree, 'depth_fusion_workers'):
+              raise SystemExit('frame_readers must not import depth_fusion_workers')
+
+          print('video_depth frame reader extraction: PASS')
+          PY
+
+      - name: Commit frame reader extraction and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/extract-frame-readers-temp.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/depth_fusion_workers.py app/depth_pipeline/frame_readers.py .github/workflows/extract-frame-readers-temp.yml
+          git commit -m 'refactor: extract sequential frame readers'
+          git push origin HEAD:refactor/extract-frame-readers-20260905

@@ -1,0 +1,37 @@
+{
+  "visible_debug": {
+    "pointcloud_mode": "visible_depth",
+    "pointcloud_density": "低",
+    "pointcloud_stride": 3,
+    "pointcloud_max_points": 50000,
+    "pointcloud_color_mode": "source_debug",
+    "pointcloud_normal_relief_enabled": false
+  },
+  "visible_quality": {
+    "pointcloud_mode": "visible_depth",
+    "pointcloud_density": "中",
+    "pointcloud_stride": 2,
+    "pointcloud_max_points": 200000,
+    "pointcloud_color_mode": "rgb",
+    "pointcloud_remove_outliers": true,
+    "pointcloud_voxel_downsample": true,
+    "pointcloud_normal_relief_enabled": true,
+    "pointcloud_normal_relief_strength": 0.01
+  },
+  "fused_body": {
+    "pointcloud_mode": "fused_body",
+    "pointcloud_density": "中",
+    "pointcloud_template_sample_ratio": 0.45,
+    "pointcloud_template_confidence": 0.55,
+    "occlusion_fill_enabled": true
+  },
+  "fused_body_hand": {
+    "pointcloud_mode": "fused_body_hand",
+    "pointcloud_density": "高",
+    "pointcloud_template_sample_ratio": 0.45,
+    "pointcloud_hand_enabled": true,
+    "pointcloud_hand_sample_ratio": 0.12,
+    "pointcloud_hand_confidence": 0.7,
+    "occlusion_fill_enabled": true
+  }
+}

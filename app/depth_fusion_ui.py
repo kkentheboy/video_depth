@@ -53,18 +53,16 @@ from depth_fusion_core import (
     traceback, trim_cuda_allocator_cache, try_load_npy, update_anchor_stats, verbose_third_party_output,
     video_has_real_alpha, warmup_three_models,
 )
+from preview_workers import PreviewWorker, OriginalFrameWorker, _BaseRebuildWorker
 from depth_fusion_workers import (
     DepthWorker,
     DepthExportWorker,
     MeshExportWorker,
     StructureCacheWorker,
     ModelPreloadWorker,
-    PreviewWorker,
     MeshPreviewWorker,
     SegmentationCacheWorker,
-    OriginalFrameWorker,
     is_structure_xyz_export_config,
-    _BaseRebuildWorker,
 )
 
 

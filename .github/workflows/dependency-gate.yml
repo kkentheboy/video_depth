@@ -37,6 +37,9 @@ jobs:
       - name: Verify cache-state round trip
         run: python scripts/regression_cache_state.py
 
+      - name: Verify image-backed frame readers
+        run: python scripts/regression_frame_readers.py
+
   declared-base-environment:
     runs-on: ubuntu-latest
     timeout-minutes: 20

@@ -63,7 +63,6 @@ from depth_fusion_workers import (
     MeshPreviewWorker,
     SegmentationCacheWorker,
     OriginalFrameWorker,
-    LocalModelManagerDialog,
     is_structure_xyz_export_config,
     _BaseRebuildWorker,
 )
@@ -94,6 +93,8 @@ from segmentation_pipeline.human_parsing import check_segmentation_environment, 
 from segmentation_pipeline.foreground import check_foreground_environment, constrain_by_foreground, read_alpha_foreground
 from segmentation_pipeline.mask_quality import classify_mask_quality, quality_to_meta
 from segmentation_pipeline.segmentation_cache import save_segmentation_frame, load_segmentation_frame, segmentation_frame_paths, segmentation_cache_summary
+
+from components.model_manager import LocalModelManagerDialog
 
 from components.widgets import (
     DropLineEdit, NoWheelSlider, NoWheelSpinBox, NoWheelDoubleSpinBox, NoWheelComboBox,

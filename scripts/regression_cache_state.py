@@ -1,36 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-WORKERS = ROOT / "app" / "depth_fusion_workers.py"
-
-OLD_STUB_BLOCK = '''def cleanup_stale_output_frames(*a, **k): return None\ndef clean_output_dir_frames(*a, **k): return None\ndef existing_frame_is_complete(*a, **k): return False\ndef validate_pointcloud_outputs(*a, **k): return {}\ndef write_pipeline_state(root: Path, cfg: JobConfig | None = None, status: str = "", extra: dict | None = None) -> None:\n    try:\n        root = Path(root); root.mkdir(parents=True, exist_ok=True)\n        with (root / "pipeline_state.json").open("w", encoding="utf-8") as f:\n            json.dump({"status": status, "extra": extra or {}}, f, ensure_ascii=False, indent=2, default=str)\n    except Exception:\n        pass\ndef alpha_cache_signature(*a, **k): return ""\ndef cache_entry_matches(*a, **k): return False\ndef depth_cache_signature(*a, **k): return ""\ndef normal_cache_signature(*a, **k): return ""\ndef record_cache_error(*a, **k): return None\ndef record_cache_frame(*a, **k): return None\ndef summarize_cache_validation(*a, **k): return ""\ndef validate_geometry_cache(*a, **k): return {}\n'''
-
-NEW_STUB_BLOCK = '''def cleanup_stale_output_frames(*a, **k): return None\ndef clean_output_dir_frames(*a, **k): return None\ndef existing_frame_is_complete(*a, **k): return False\ndef validate_pointcloud_outputs(*a, **k): return {}\n'''
-
-CACHE_IMPORT = '''from depth_pipeline.cache_state import (\n    alpha_cache_signature,\n    cache_entry_matches,\n    depth_cache_signature,\n    normal_cache_signature,\n    record_cache_error,\n    record_cache_frame,\n    summarize_cache_validation,\n    validate_geometry_cache,\n    write_pipeline_state,\n)\n'''
-
-IMPORT_ANCHOR = '''from common.cache import frame_stem\n'''
-
-
-def main() -> None:
-    text = WORKERS.read_text(encoding="utf-8-sig")
-    if text.count(OLD_STUB_BLOCK) != 1:
-        raise SystemExit(f"expected one cache stub block, found {text.count(OLD_STUB_BLOCK)}")
-    if text.count(IMPORT_ANCHOR) != 1:
-        raise SystemExit("common.cache import anchor changed")
-    if "from depth_pipeline.cache_state import (" in text:
-        raise SystemExit("cache_state authority import already exists")
-
-    text = text.replace(IMPORT_ANCHOR, CACHE_IMPORT + IMPORT_ANCHOR, 1)
-    text = text.replace(OLD_STUB_BLOCK, NEW_STUB_BLOCK, 1)
-    WORKERS.write_text(text, encoding="utf-8")
-
-    regression = r'''#!/usr/bin/env python3
-from __future__ import annotations
-
 import json
 import sys
 import tempfile
@@ -156,13 +126,6 @@ def main() -> None:
         check(state.get("regression") is True, "pipeline state extra metadata missing")
 
     print("video_depth cache-state regression: PASS")
-
-
-if __name__ == "__main__":
-    main()
-'''
-    (ROOT / "scripts" / "regression_cache_state.py").write_text(regression, encoding="utf-8")
-    print("video_depth cache authority repair staged")
 
 
 if __name__ == "__main__":

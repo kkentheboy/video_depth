@@ -16,7 +16,7 @@ jobs:
           python-version: '3.12'
 
       - name: Compile application sources
-        run: python -m compileall -q app scripts/regression_source_core_contract.py scripts/regression_encoder_display_contract.py scripts/regression_ui_primitive_authority.py scripts/regression_model_manager_authority.py
+        run: python -m compileall -q app scripts/regression_source_core_contract.py scripts/regression_encoder_display_contract.py scripts/regression_ui_primitive_authority.py scripts/regression_model_manager_authority.py scripts/regression_frame_reader_authority.py
 
       - name: Verify core import and cache authority contracts
         run: python scripts/regression_source_core_contract.py
@@ -29,3 +29,6 @@ jobs:
 
       - name: Verify model manager ownership contract
         run: python scripts/regression_model_manager_authority.py
+
+      - name: Verify frame reader ownership contract
+        run: python scripts/regression_frame_reader_authority.py

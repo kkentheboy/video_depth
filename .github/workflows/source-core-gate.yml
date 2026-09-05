@@ -3,10 +3,7 @@ name: Source Core Gate
 on:
   pull_request:
   push:
-    branches: [main, test/source-core-contract-20260905]
-
-permissions:
-  contents: write
+    branches: [main]
 
 jobs:
   source-core-contract:
@@ -17,39 +14,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Compile application sources
         run: python -m compileall -q app scripts/regression_source_core_contract.py
+
       - name: Verify core import and cache authority contracts
         run: python scripts/regression_source_core_contract.py
-
-  cache-authority-repair:
-    if: github.ref == 'refs/heads/test/source-core-contract-20260905'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: test/source-core-contract-20260905
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install cache regression runtime
-        run: python -m pip install --disable-pip-version-check "numpy==2.2.6"
-      - name: Apply cache authority repair
-        run: python tools/apply_cache_authority_fix.py
-      - name: Verify repaired source/cache contracts
-        run: |
-          python -m compileall -q app scripts/regression_source_core_contract.py scripts/regression_cache_state.py
-          python scripts/regression_source_core_contract.py
-          python scripts/regression_cache_state.py
-      - name: Commit repair and remove temporary tooling
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm tools/apply_cache_authority_fix.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/depth_fusion_workers.py scripts/regression_cache_state.py tools/apply_cache_authority_fix.py
-          git commit -m "fix: restore cache-state authority in workers"
-          git push origin HEAD:test/source-core-contract-20260905

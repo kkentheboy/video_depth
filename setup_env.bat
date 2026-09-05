@@ -12,6 +12,13 @@ if errorlevel 1 (
   exit /b 1
 )
 
+%PYTHON_CMD% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)"
+if errorlevel 1 (
+  echo [ERROR] Python 3.10+ is required.
+  %PYTHON_CMD% --version
+  exit /b 1
+)
+
 if not exist ".venv\Scripts\python.exe" (
   echo [INFO] Creating .venv...
   %PYTHON_CMD% -m venv .venv
@@ -33,6 +40,12 @@ if defined TORCH_INDEX_URL (
 if errorlevel 1 exit /b 1
 
 "%PY%" -m pip install -r requirements.txt
+if errorlevel 1 exit /b 1
+
+"%PY%" -m pip check
+if errorlevel 1 exit /b 1
+
+"%PY%" scripts\verify_environment.py
 if errorlevel 1 exit /b 1
 
 if not exist "data\models" mkdir "data\models"

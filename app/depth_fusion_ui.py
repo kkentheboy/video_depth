@@ -96,6 +96,7 @@ from components.file_path_actions_mixin import FilePathActionsMixin
 from components.input_validation_mixin import InputValidationMixin
 from components.input_source_state_mixin import InputSourceStateMixin
 from components.conditional_ui_state_mixin import ConditionalUiStateMixin
+from components.three_model_ui_state_mixin import ThreeModelUiStateMixin
 from components.structure_cache_state_mixin import StructureCacheStateMixin
 from components.model_configuration_mixin import ModelConfigurationMixin
 from components.deployment_environment_mixin import DeploymentEnvironmentMixin
@@ -113,7 +114,7 @@ from components.widgets import (
 from components.waveform import CurveWaveformPanel
 
 
-class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, InputSourceStateMixin, ConditionalUiStateMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
+class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, InputSourceStateMixin, ConditionalUiStateMixin, ThreeModelUiStateMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
     event_console_line = Signal(str)
 
     def __init__(self) -> None:
@@ -812,12 +813,6 @@ class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationM
         from components.panels import build_main_layout
         build_main_layout(self)
 
-    def _effective_normal_strength(self) -> int:
-        return 0
-
-    def _effective_normal_refine(self) -> int:
-        return 0
-
     def on_three_model_controls_changed(self) -> None:
         self._update_three_model_status()
         if self.preview_depth is not None:
@@ -829,19 +824,6 @@ class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationM
                 self.preview_status_label.setText("当前预览缺少 法线/Alpha 缓存，点“渲染当前帧”补齐。")
                 return
         self.render_preview_from_cache()
-
-    def _update_three_model_status(self) -> None:
-        if hasattr(self, "three_model_state_label"):
-            solver = self.structure_solver_combo.currentText() if hasattr(self, "structure_solver_combo") else "4DHumans"
-            self.three_model_state_label.setText(f"主线：{solver} → Root稳定/时序去抖 → Dense Mesh → Garment/Hair Shell → Mesh / 可选点云")
-        self._update_matting_status_label()
-        self._update_external_media_status_label()
-        self.refresh_3d_model_status()
-        try:
-            self.normal_strength_spin.setEnabled(False)
-            self.normal_refine_spin.setEnabled(False)
-        except Exception:
-            pass
 
     def _effective_pointcloud_stride(self) -> int:
         density = self.pointcloud_density_combo.currentText() if hasattr(self, "pointcloud_density_combo") else "中"

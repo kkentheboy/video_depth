@@ -4,6 +4,15 @@ from __future__ import annotations
 from depth_fusion_core import APP_NAME, PROJECT_DIR, QMessageBox, json
 
 class ModelConfigurationMixin:
+    _MODEL_WEIGHT_SUFFIXES = {".pkl", ".npz", ".pt", ".pth", ".ckpt", ".safetensors", ".onnx", ".pt2"}
+    _MODEL_SCAN_SKIP_PARTS = {
+        "test", "tests", "testing", "example", "examples", "sample", "samples",
+        "demo", "demos", "docs", "doc", "assets", "h36m", "coco", "lsp", "mpi_inf_3dhp",
+    }
+    _MODEL_SCAN_SKIP_FILENAMES = {
+        "cameras.pkl", "test_h36m.npz", "test_h36m_body3d.npz",
+    }
+
     def _looks_like_real_model_weight(self, p: Path, key: str) -> bool:
         """Filter out repo fixtures and keep actual model/checkpoint files.
 

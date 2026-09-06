@@ -1611,15 +1611,6 @@ class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationM
         else:
             self.render_preview_from_cache()
 
-    _MODEL_WEIGHT_SUFFIXES = {".pkl", ".npz", ".pt", ".pth", ".ckpt", ".safetensors", ".onnx", ".pt2"}
-    _MODEL_SCAN_SKIP_PARTS = {
-        "test", "tests", "testing", "example", "examples", "sample", "samples",
-        "demo", "demos", "docs", "doc", "assets", "h36m", "coco", "lsp", "mpi_inf_3dhp",
-    }
-    _MODEL_SCAN_SKIP_FILENAMES = {
-        "cameras.pkl", "test_h36m.npz", "test_h36m_body3d.npz",
-    }
-
 
 
 

@@ -16,7 +16,7 @@ jobs:
           python-version: '3.12'
 
       - name: Compile application sources
-        run: python -m compileall -q app scripts/regression_source_core_contract.py scripts/regression_encoder_display_contract.py scripts/regression_ui_primitive_authority.py scripts/regression_model_manager_authority.py scripts/regression_frame_reader_authority.py scripts/regression_preview_worker_authority.py scripts/regression_structure_worker_authority.py scripts/regression_resource_management_mixin.py scripts/regression_file_path_actions_mixin.py scripts/regression_project_state_mixin.py scripts/regression_output_routing_mixin.py scripts/regression_job_configuration_mixin.py scripts/regression_processing_range_mixin.py scripts/regression_preview_frame_mixin.py scripts/regression_input_validation_mixin.py scripts/regression_model_configuration_mixin.py scripts/regression_deployment_environment_mixin.py
+        run: python -m compileall -q app scripts/regression_source_core_contract.py scripts/regression_encoder_display_contract.py scripts/regression_ui_primitive_authority.py scripts/regression_model_manager_authority.py scripts/regression_frame_reader_authority.py scripts/regression_preview_worker_authority.py scripts/regression_structure_worker_authority.py scripts/regression_resource_management_mixin.py scripts/regression_file_path_actions_mixin.py scripts/regression_project_state_mixin.py scripts/regression_output_routing_mixin.py scripts/regression_job_configuration_mixin.py scripts/regression_processing_range_mixin.py scripts/regression_preview_frame_mixin.py scripts/regression_input_validation_mixin.py scripts/regression_model_configuration_mixin.py scripts/regression_deployment_environment_mixin.py scripts/regression_structure_cache_state_mixin.py
 
       - name: Verify core import and cache authority contracts
         run: python scripts/regression_source_core_contract.py
@@ -68,3 +68,6 @@ jobs:
 
       - name: Verify deployment environment mixin contract
         run: python scripts/regression_deployment_environment_mixin.py
+
+      - name: Verify structure cache state mixin contract
+        run: python scripts/regression_structure_cache_state_mixin.py

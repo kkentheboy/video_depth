@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 
-
 class ProcessingRangeMixin:
     def _set_processing_frame_range(self, start_min: int, end_max: int, *, reset_values: bool = False) -> None:
         max_frame = max(0, int(end_max))
@@ -94,4 +93,3 @@ class ProcessingRangeMixin:
     def _on_processing_end_spin_changed(self, value: int) -> None:
         self._set_processing_values(end=int(value))
         self._apply_preview_frame_value(int(value), refresh_mesh=False)
-

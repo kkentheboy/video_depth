@@ -108,8 +108,8 @@ def main() -> None:
     assert "_structure_scheme_text" in self_calls(project_methods["_apply_preset_payload"]), (
         "project preset restore must use the shared structure-scheme naming authority"
     )
-    assert "load_project_state" in project_methods
-    load_calls = self_calls(project_methods["load_project_state"])
+    assert "load_project" in project_methods
+    load_calls = self_calls(project_methods["load_project"])
     assert {"_restore_best_available_structure_scheme", "_update_structure_scheme_status_labels"} <= load_calls, (
         "project load must restore and refresh structure-cache state through StructureCacheStateMixin"
     )

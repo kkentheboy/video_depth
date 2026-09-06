@@ -69,9 +69,10 @@ jobs:
           moved_nodes = [n for n in main.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in selected]
           assert len(moved_nodes) == len(selected)
           lines = source.splitlines(keepends=True)
+          node_start = lambda n: min([n.lineno] + [d.lineno for d in n.decorator_list]) - 1
           moved_src = {}
           for node in moved_nodes:
-              text = ''.join(lines[node.lineno - 1:node.end_lineno])
+              text = ''.join(lines[node_start(node):node.end_lineno])
               text = ''.join(line[4:] if line.startswith('    ') else line for line in text.splitlines(keepends=True))
               moved_src[node.name] = text.rstrip() + '\n'
 
@@ -134,7 +135,7 @@ jobs:
           out_path.write_text(body.rstrip() + '\n', encoding='utf-8')
 
           new_lines = lines[:]
-          for start, end in sorted(((n.lineno - 1, n.end_lineno) for n in moved_nodes), reverse=True):
+          for start, end in sorted(((node_start(n), n.end_lineno) for n in moved_nodes), reverse=True):
               del new_lines[start:end]
           new_source = ''.join(new_lines)
           import_anchor = 'from components.input_validation_mixin import InputValidationMixin\n'

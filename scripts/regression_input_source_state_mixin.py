@@ -58,7 +58,7 @@ def main() -> None:
     mixin_methods = direct_methods(mixin_cls)
     assert not (EXPECTED_METHODS - mixin_methods.keys())
     assert not (EXPECTED_METHODS & ui_methods.keys())
-    assert "_update_conditional_visibility" in ui_methods
+    assert "_update_conditional_visibility" not in ui_methods
     assert "_update_conditional_visibility" not in mixin_methods
     assert "depth_fusion_ui" not in MIXIN_PATH.read_text(encoding="utf-8")
 
@@ -76,8 +76,6 @@ def main() -> None:
         "on_external_media_changed",
     } <= self_calls(mixin_methods["_apply_source_mode"])
     assert "_update_matting_status_label" in self_calls(ui_methods["_update_three_model_status"])
-    visibility_calls = self_calls(ui_methods["_update_conditional_visibility"])
-    assert "_current_source_mode" in visibility_calls or "_source_mode_from_current_controls" in visibility_calls
     print("input source state mixin contract: PASS")
 
 

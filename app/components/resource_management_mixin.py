@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from depth_fusion_core import APP_NAME, PROJECT_CACHE_DIR, PROJECT_LOG_DIR, QMessageBox, clear_all_cache, clear_cache_entry, clear_cache_older_than, directory_size_bytes, event_log, format_bytes, frame_cache_root, list_cache_entries, os
+from depth_fusion_core import APP_NAME, PROJECT_CACHE_DIR, PROJECT_LOG_DIR, QMessageBox, clear_all_cache, clear_cache_entry, clear_cache_older_than, directory_size_bytes, event_log, format_bytes, frame_cache_root, list_cache_entries
 from components.model_manager import LocalModelManagerDialog
 
 class ResourceManagementMixin:

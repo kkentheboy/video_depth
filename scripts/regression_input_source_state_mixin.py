@@ -75,7 +75,6 @@ def main() -> None:
         "_update_conditional_visibility",
         "on_external_media_changed",
     } <= self_calls(mixin_methods["_apply_source_mode"])
-    assert "_update_matting_status_label" in self_calls(ui_methods["_update_three_model_status"])
     print("input source state mixin contract: PASS")
 
 

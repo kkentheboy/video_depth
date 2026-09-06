@@ -49,9 +49,13 @@ jobs:
                   if isinstance(x, ast.Name):
                       (loaded if isinstance(x.ctx, ast.Load) else stored).add(x.id)
                   elif isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                      stored.add(x.name)
                       stored.update(a.arg for a in x.args.args + x.args.kwonlyargs)
                       if x.args.vararg: stored.add(x.args.vararg.arg)
                       if x.args.kwarg: stored.add(x.args.kwarg.arg)
+                  elif isinstance(x, ast.ExceptHandler):
+                      if x.name:
+                          stored.add(x.name)
                   elif isinstance(x, ast.Import):
                       imported_inner.update((a.asname or a.name.split('.')[0]) for a in x.names)
                   elif isinstance(x, ast.ImportFrom):

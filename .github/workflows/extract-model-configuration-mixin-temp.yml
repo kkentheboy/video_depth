@@ -72,9 +72,7 @@ jobs:
           node_start = lambda n: min([n.lineno] + [d.lineno for d in n.decorator_list]) - 1
           moved_src = {}
           for node in moved_nodes:
-              text = ''.join(lines[node_start(node):node.end_lineno])
-              text = ''.join(line[4:] if line.startswith('    ') else line for line in text.splitlines(keepends=True))
-              moved_src[node.name] = text.rstrip() + '\n'
+              moved_src[node.name] = ''.join(lines[node_start(node):node.end_lineno]).rstrip() + '\n'
 
           builtin_names = set(dir(__builtins__))
           loaded = set()
@@ -129,9 +127,7 @@ jobs:
               body += '\n'.join(import_lines) + '\n\n'
           body += 'class ModelConfigurationMixin:\n'
           for node in moved_nodes:
-              for line in moved_src[node.name].splitlines():
-                  body += '    ' + line + '\n'
-              body += '\n'
+              body += moved_src[node.name] + '\n'
           out_path.write_text(body.rstrip() + '\n', encoding='utf-8')
 
           new_lines = lines[:]

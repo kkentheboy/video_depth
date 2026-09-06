@@ -98,6 +98,7 @@ from components.input_source_state_mixin import InputSourceStateMixin
 from components.conditional_ui_state_mixin import ConditionalUiStateMixin
 from components.three_model_ui_state_mixin import ThreeModelUiStateMixin
 from components.ui_presentation_state_mixin import UiPresentationStateMixin
+from components.event_console_state_mixin import EventConsoleStateMixin
 from components.structure_cache_state_mixin import StructureCacheStateMixin
 from components.model_configuration_mixin import ModelConfigurationMixin
 from components.deployment_environment_mixin import DeploymentEnvironmentMixin
@@ -115,7 +116,7 @@ from components.widgets import (
 from components.waveform import CurveWaveformPanel
 
 
-class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, InputSourceStateMixin, ConditionalUiStateMixin, ThreeModelUiStateMixin, UiPresentationStateMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
+class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, InputSourceStateMixin, ConditionalUiStateMixin, ThreeModelUiStateMixin, UiPresentationStateMixin, EventConsoleStateMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
     event_console_line = Signal(str)
 
     def __init__(self) -> None:
@@ -1012,39 +1013,6 @@ class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationM
             QTimer.singleShot(0, lambda b=obj: self._sync_button_cursor(b))
         return super().eventFilter(obj, event)
 
-
-    def _append_event_console_line(self, text: str) -> None:
-        line = str(text).rstrip("\n")
-        if not line:
-            return
-        # Worker log signals can arrive shortly after their event_log line.
-        # Keep the console readable by dropping immediate duplicates.
-        if line in self._event_console_recent[-12:]:
-            return
-        self._event_console_recent.append(line)
-        if len(self._event_console_recent) > 64:
-            self._event_console_recent = self._event_console_recent[-64:]
-        self.log_box.appendPlainText(line)
-        try:
-            bar = self.log_box.verticalScrollBar()
-            bar.setValue(bar.maximum())
-        except Exception:
-            pass
-
-    def _on_worker_log_signal(self, text: str) -> None:
-        # Most workers already call event_log() before emitting their legacy
-        # log signal. The event listener is the source of truth, so do not log
-        # again unless the listener was not installed for some reason.
-        if not getattr(self, "_event_console_listener_active", False):
-            self._append_event_console_line(str(text))
-
-    def log(self, text: str) -> None:
-        event_log(text, channel="UI")
-
-    def clear_event_console(self) -> None:
-        self.log_box.clear()
-        self._event_console_recent.clear()
-        event_log("事件控制台已清空", channel="UI")
 
     def on_stage_changed(self, text: str) -> None:
         if hasattr(self, "stage_status_label"):

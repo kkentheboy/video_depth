@@ -52,7 +52,6 @@ def main() -> None:
     assert not (EXPECTED_METHODS - mixin_methods.keys())
     assert not (EXPECTED_METHODS & ui_methods.keys())
     assert "eventFilter" in ui_methods, "Qt event-dispatch integration must remain on MainWindow"
-    assert "_append_event_console_line" in ui_methods, "event console integration is not presentation-state ownership"
     assert "depth_fusion_ui" not in MIXIN_PATH.read_text(encoding="utf-8")
 
     bases = [ast.unparse(base) for base in ui_cls.bases]

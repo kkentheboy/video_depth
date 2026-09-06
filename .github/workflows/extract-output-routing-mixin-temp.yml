@@ -1,0 +1,115 @@
+name: Extract Output Routing Mixin Temp
+
+on:
+  push:
+    branches: [refactor/extract-output-routing-mixin-20260906]
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract output routing mixin
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import ast
+          from pathlib import Path
+
+          ui_path = Path('app/depth_fusion_ui.py')
+          out_path = Path('app/components/output_routing_mixin.py')
+          ui = ui_path.read_text(encoding='utf-8')
+          tree = ast.parse(ui)
+          mains = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'MainWindow']
+          if len(mains) != 1:
+              raise SystemExit(f'expected one MainWindow, got {len(mains)}')
+          main = mains[0]
+          target_order = [
+              '_set_encoder_combo_value',
+              '_current_encoder_mode',
+              '_is_structure_output_mode',
+              '_is_png_sequence_mode',
+              '_default_output_path_for_encoder',
+              '_coerce_output_path_for_encoder',
+              'on_encoder_changed',
+              'refresh_output_size',
+              'on_output_geometry_changed',
+          ]
+          targets = set(target_order)
+          methods = {
+              n.name: n for n in main.body
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in targets
+          }
+          missing = targets - methods.keys()
+          if missing:
+              raise SystemExit(f'missing target methods: {sorted(missing)}')
+          for name, node in methods.items():
+              if any(isinstance(x, ast.Call) and isinstance(x.func, ast.Name) and x.func.id == 'super' for x in ast.walk(node)):
+                  raise SystemExit(f'{name} uses super(); refusing mixin extraction')
+
+          lines = ui.splitlines(keepends=True)
+          chunks = []
+          spans = []
+          before_dump = {}
+          for name in target_order:
+              node = methods[name]
+              chunks.append(''.join(lines[node.lineno-1:node.end_lineno]).rstrip() + '\n')
+              spans.append((node.lineno-1, node.end_lineno))
+              before_dump[name] = ast.dump(node, include_attributes=False)
+          for start, end in sorted(spans, reverse=True):
+              del lines[start:end]
+          new_ui = ''.join(lines)
+
+          module = '''# -*- coding: utf-8 -*-\nfrom __future__ import annotations\n\nimport os\n\nfrom depth_fusion_core import (\n    Optional, Path, default_output_path, default_structure_output_dir,\n    png_sequence_output_dir, scaled_size_from_long_side,\n)\nfrom common.encoder_display import encoder_display_name, encoder_internal_name\n\n\nclass OutputRoutingMixin:\n'''
+          for chunk in chunks:
+              module += ''.join('    ' + line if line.strip() else line for line in chunk.splitlines(keepends=True)) + '\n'
+          ast.parse(module)
+          out_path.write_text(module, encoding='utf-8')
+
+          new_tree = ast.parse(new_ui)
+          mains2 = [n for n in new_tree.body if isinstance(n, ast.ClassDef) and n.name == 'MainWindow']
+          main2 = mains2[0]
+          leaked = targets & {n.name for n in main2.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+          if leaked:
+              raise SystemExit(f'target methods remain in MainWindow: {sorted(leaked)}')
+
+          mix_tree = ast.parse(module)
+          mix = next(n for n in mix_tree.body if isinstance(n, ast.ClassDef) and n.name == 'OutputRoutingMixin')
+          moved = {n.name: n for n in mix.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+          for name in target_order:
+              if name not in moved:
+                  raise SystemExit(f'mixin missing {name}')
+              if ast.dump(moved[name], include_attributes=False) != before_dump[name]:
+                  raise SystemExit(f'AST changed while moving {name}')
+
+          import_line = 'from components.output_routing_mixin import OutputRoutingMixin\n'
+          marker = 'from components.project_state_mixin import ProjectStateMixin\n'
+          if marker not in new_ui:
+              raise SystemExit('project state mixin import marker missing')
+          new_ui = new_ui.replace(marker, marker + import_line, 1)
+          old_decl = 'class MainWindow(ResourceManagementMixin, FilePathActionsMixin, ProjectStateMixin, QMainWindow):'
+          new_decl = 'class MainWindow(ResourceManagementMixin, FilePathActionsMixin, ProjectStateMixin, OutputRoutingMixin, QMainWindow):'
+          if new_ui.count(old_decl) != 1:
+              raise SystemExit('unexpected MainWindow declaration')
+          new_ui = new_ui.replace(old_decl, new_decl, 1)
+          ast.parse(new_ui)
+          ui_path.write_text(new_ui, encoding='utf-8')
+          print('output routing mixin extraction: PASS')
+          PY
+          python -m compileall -q app
+      - name: Commit extraction and self-delete
+        shell: bash
+        run: |
+          rm .github/workflows/extract-output-routing-mixin-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/depth_fusion_ui.py app/components/output_routing_mixin.py .github/workflows/extract-output-routing-mixin-temp.yml
+          git commit -m "refactor: extract output routing UI mixin"
+          git push

@@ -1,0 +1,173 @@
+name: Extract Job Configuration Mixin Temp
+
+on:
+  push:
+    branches: [refactor/extract-job-configuration-mixin-20260906]
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract job configuration mixin
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import ast
+          import builtins
+          import symtable
+          import textwrap
+          from collections import defaultdict
+          from pathlib import Path
+
+          ui_path = Path('app/depth_fusion_ui.py')
+          out_path = Path('app/components/job_configuration_mixin.py')
+          ui = ui_path.read_text(encoding='utf-8')
+          tree = ast.parse(ui)
+          mains = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'MainWindow']
+          if len(mains) != 1:
+              raise SystemExit(f'expected one MainWindow, got {len(mains)}')
+          main = mains[0]
+          target_order = [
+              '_structure_model_key',
+              '_pointcloud_mode',
+              '_pointcloud_color_mode',
+              'make_config',
+              '_resource_risks',
+              '_confirm_resource_risk',
+              '_confirm_preview_resource_risk',
+          ]
+          targets = set(target_order)
+          methods = {
+              n.name: n for n in main.body
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in targets
+          }
+          missing = targets - methods.keys()
+          if missing:
+              raise SystemExit(f'missing target methods: {sorted(missing)}')
+          for name, node in methods.items():
+              if any(isinstance(x, ast.Call) and isinstance(x.func, ast.Name) and x.func.id == 'super' for x in ast.walk(node)):
+                  raise SystemExit(f'{name} uses super(); refusing mixin extraction')
+
+          lines = ui.splitlines(keepends=True)
+          chunks: list[str] = []
+          spans = []
+          before_dump = {}
+          for name in target_order:
+              node = methods[name]
+              chunk = ''.join(lines[node.lineno-1:node.end_lineno]).rstrip() + '\n'
+              chunks.append(chunk)
+              spans.append((node.lineno-1, node.end_lineno))
+              before_dump[name] = ast.dump(node, include_attributes=False)
+
+          # Collect function-global names using Python's symbol table, including nested functions.
+          global_names: set[str] = set()
+          def walk_table(tbl):
+              for sym in tbl.get_symbols():
+                  if sym.is_global() and sym.is_referenced():
+                      global_names.add(sym.get_name())
+              for child in tbl.get_children():
+                  walk_table(child)
+          for chunk in chunks:
+              tbl = symtable.symtable(textwrap.dedent(chunk), '<method>', 'exec')
+              walk_table(tbl)
+          global_names -= set(dir(builtins))
+
+          # Build a minimal top-level import map. Prefer direct imports over re-exported names.
+          import_map = {}
+          for node in tree.body:
+              if isinstance(node, ast.Import):
+                  for alias in node.names:
+                      bound = alias.asname or alias.name.split('.')[0]
+                      import_map[bound] = ('import', alias.name, alias.asname)
+          for node in tree.body:
+              if isinstance(node, ast.ImportFrom):
+                  for alias in node.names:
+                      bound = alias.asname or alias.name
+                      import_map.setdefault(bound, ('from', node.module, alias.name, alias.asname, node.level))
+
+          unresolved = sorted(name for name in global_names if name not in import_map)
+          if unresolved:
+              raise SystemExit(f'target methods depend on unresolved UI module globals: {unresolved}')
+
+          direct_imports = []
+          from_imports = defaultdict(list)
+          for name in sorted(global_names):
+              spec = import_map[name]
+              if spec[0] == 'import':
+                  _kind, module, alias = spec
+                  direct_imports.append(f'import {module}' + (f' as {alias}' if alias else ''))
+              else:
+                  _kind, module, original, alias, level = spec
+                  if module == 'depth_fusion_ui':
+                      raise SystemExit(f'reverse dependency to depth_fusion_ui via {name}')
+                  key = ('.' * int(level)) + (module or '')
+                  rendered = original + (f' as {alias}' if alias else '')
+                  from_imports[key].append(rendered)
+
+          import_lines = ['# -*- coding: utf-8 -*-', 'from __future__ import annotations', '']
+          import_lines.extend(sorted(set(direct_imports)))
+          if direct_imports:
+              import_lines.append('')
+          for module in sorted(from_imports):
+              names = ', '.join(sorted(set(from_imports[module])))
+              import_lines.append(f'from {module} import {names}')
+          import_lines.extend(['', '', 'class JobConfigurationMixin:'])
+          module = '\n'.join(import_lines) + '\n'
+          for chunk in chunks:
+              dedented = textwrap.dedent(chunk)
+              module += textwrap.indent(dedented, '    ') + '\n'
+          ast.parse(module)
+          out_path.write_text(module, encoding='utf-8')
+
+          # Remove original methods only after the new module is proven parseable.
+          for start, end in sorted(spans, reverse=True):
+              del lines[start:end]
+          new_ui = ''.join(lines)
+          new_tree = ast.parse(new_ui)
+          main2 = next(n for n in new_tree.body if isinstance(n, ast.ClassDef) and n.name == 'MainWindow')
+          leaked = targets & {n.name for n in main2.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+          if leaked:
+              raise SystemExit(f'target methods remain in MainWindow: {sorted(leaked)}')
+
+          mix_tree = ast.parse(module)
+          mix = next(n for n in mix_tree.body if isinstance(n, ast.ClassDef) and n.name == 'JobConfigurationMixin')
+          moved = {n.name: n for n in mix.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+          for name in target_order:
+              if name not in moved:
+                  raise SystemExit(f'mixin missing {name}')
+              if ast.dump(moved[name], include_attributes=False) != before_dump[name]:
+                  raise SystemExit(f'AST changed while moving {name}')
+
+          marker = 'from components.project_state_mixin import ProjectStateMixin\n'
+          import_line = 'from components.job_configuration_mixin import JobConfigurationMixin\n'
+          if marker not in new_ui:
+              raise SystemExit('project state mixin import marker missing')
+          new_ui = new_ui.replace(marker, marker + import_line, 1)
+          old_decl = 'class MainWindow(ResourceManagementMixin, FilePathActionsMixin, ProjectStateMixin, OutputRoutingMixin, QMainWindow):'
+          new_decl = 'class MainWindow(ResourceManagementMixin, FilePathActionsMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):'
+          if new_ui.count(old_decl) != 1:
+              raise SystemExit('unexpected MainWindow declaration')
+          new_ui = new_ui.replace(old_decl, new_decl, 1)
+          ast.parse(new_ui)
+          ui_path.write_text(new_ui, encoding='utf-8')
+          print('job configuration mixin extraction: PASS')
+          print('minimal globals:', ', '.join(sorted(global_names)))
+          PY
+          python -m compileall -q app
+      - name: Commit extraction and self-delete
+        shell: bash
+        run: |
+          rm .github/workflows/extract-job-configuration-mixin-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/depth_fusion_ui.py app/components/job_configuration_mixin.py .github/workflows/extract-job-configuration-mixin-temp.yml
+          git commit -m "refactor: extract job configuration UI mixin"
+          git push

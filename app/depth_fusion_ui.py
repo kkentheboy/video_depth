@@ -92,6 +92,7 @@ from segmentation_pipeline.segmentation_cache import save_segmentation_frame, lo
 
 from components.model_manager import LocalModelManagerDialog
 from components.resource_management_mixin import ResourceManagementMixin
+from components.file_path_actions_mixin import FilePathActionsMixin
 
 from components.widgets import (
     DropLineEdit, NoWheelSlider, NoWheelSpinBox, NoWheelDoubleSpinBox, NoWheelComboBox,
@@ -101,7 +102,7 @@ from components.widgets import (
 from components.waveform import CurveWaveformPanel
 
 
-class MainWindow(ResourceManagementMixin, QMainWindow):
+class MainWindow(ResourceManagementMixin, FilePathActionsMixin, QMainWindow):
     event_console_line = Signal(str)
 
     def __init__(self) -> None:
@@ -1670,15 +1671,6 @@ class MainWindow(ResourceManagementMixin, QMainWindow):
         self.preview_status_label.setText("输出尺寸已变化，请重新预览 Mesh / 点云。")
         self.show_original_frame_immediately(int(self.preview_frame_spin.value()))
 
-    def pick_video(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            "选择视频",
-            "",
-            "Video Files (*.mp4 *.mov *.mkv *.avi *.webm *.m4v *.wmv);;All Files (*.*)",
-        )
-        if path:
-            self.load_video(path)
     def load_project(self, project_dir: Path) -> None:
         self.current_project_dir = project_dir
         self.setWindowTitle(f"{APP_NAME} - {project_dir.name}")
@@ -3736,48 +3728,7 @@ class MainWindow(ResourceManagementMixin, QMainWindow):
             self.output_path_edit.setText(self._default_output_path_for_encoder(out_w, out_h))
         self.output_open_btn.setEnabled(bool(self.output_path_edit.text().strip()))
 
-    def pick_output_path(self) -> None:
-        if not self.current_input or not self.video_info:
-            QMessageBox.warning(self, APP_NAME, "请先导入视频。")
-            return
-        out_w, out_h = scaled_size_from_long_side(
-            self.video_info.width,
-            self.video_info.height,
-            self.long_side_spin.value(),
-        )
-        current = self.output_path_edit.text().strip() or self._default_output_path_for_encoder(out_w, out_h)
-        if self._is_structure_output_mode():
-            start_dir = str(Path(current).parent if current else Path(self.current_input).parent)
-            path = QFileDialog.getExistingDirectory(self, "选择 Mesh / 点云输出文件夹", start_dir)
-        else:
-            if self._is_png_sequence_mode():
-                title = "选择 PNG 序列输出目录名"
-                file_filter = "PNG Sequence Folder (*);;All Files (*.*)"
-            else:
-                title = "选择输出 MP4"
-                file_filter = "MP4 Video (*.mp4);;All Files (*.*)"
-            path, _ = QFileDialog.getSaveFileName(self, title, current, file_filter)
-        if path:
-            self._manual_output_path = True
-            self.output_path_edit.setText(self._coerce_output_path_for_encoder(path, out_w, out_h))
-            self.output_open_btn.setEnabled(True)
 
-    def open_output_dir(self) -> None:
-        path = self.output_path_edit.text().strip()
-        if not path:
-            try:
-                self.preview_status_label.setText("还没有输出路径。请先选择输出位置。")
-            except Exception:
-                pass
-            QMessageBox.warning(self, APP_NAME, "还没有输出路径。请先选择输出位置。")
-            return
-        path_obj = Path(path)
-        folder = path_obj if self._is_structure_output_mode() or self._is_png_sequence_mode() or not path_obj.suffix else path_obj.parent
-        folder.mkdir(parents=True, exist_ok=True)
-        try:
-            os.startfile(str(folder))  # type: ignore[attr-defined]
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, APP_NAME, f"无法打开目录: {exc}")
 
     def make_config(self) -> JobConfig:
         if not self.current_input or not self.video_info:

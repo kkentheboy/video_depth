@@ -97,6 +97,7 @@ from components.input_validation_mixin import InputValidationMixin
 from components.input_source_state_mixin import InputSourceStateMixin
 from components.conditional_ui_state_mixin import ConditionalUiStateMixin
 from components.three_model_ui_state_mixin import ThreeModelUiStateMixin
+from components.ui_presentation_state_mixin import UiPresentationStateMixin
 from components.structure_cache_state_mixin import StructureCacheStateMixin
 from components.model_configuration_mixin import ModelConfigurationMixin
 from components.deployment_environment_mixin import DeploymentEnvironmentMixin
@@ -114,7 +115,7 @@ from components.widgets import (
 from components.waveform import CurveWaveformPanel
 
 
-class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, InputSourceStateMixin, ConditionalUiStateMixin, ThreeModelUiStateMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
+class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, InputSourceStateMixin, ConditionalUiStateMixin, ThreeModelUiStateMixin, UiPresentationStateMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
     event_console_line = Signal(str)
 
     def __init__(self) -> None:
@@ -1006,56 +1007,11 @@ class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationM
         self._show_adjusted_original_preview()
         self.preview_status_label.setText("当前主线不使用曲线/灰阶/五区调色；只检查 原视频 Alpha。")
 
-    def _apply_style(self) -> None:
-        # The current card-based UI sets object names while building panels.
-        # Do not overwrite primaryButton / secondaryButton / navButton names here,
-        # otherwise their page-specific QSS stops matching after _apply_style().
-        for btn in (
-            self.model_manager_btn, self.cache_manager_btn, self.log_dir_btn,
-            self.external_mask_pick_btn, self.external_depth_pick_btn,
-            self.preview_btn, self.preview_big_btn,
-            self.preset_human_btn, self.preset_neutral_btn, self.preset_displacement_btn,
-            self.preset_high_png_btn, self.preset_low_mem_btn, self.preset_import_btn,
-            self.preset_export_btn,
-        ):
-            if not btn.objectName():
-                btn.setObjectName("secondaryAction")
-        if not self.path_edit.objectName():
-            self.path_edit.setObjectName("pathEdit")
-        self.preview_status_label.setObjectName("previewStatusLabel")
-        self.info_label.setObjectName("infoLabel")
-
-        self.setStyleSheet(APP_STYLESHEET)
-        self._install_button_cursor_policy()
-
-    def _install_button_cursor_policy(self) -> None:
-        for btn in self.findChildren(QPushButton):
-            btn.installEventFilter(self)
-            self._sync_button_cursor(btn)
-
-    def _sync_button_cursor(self, btn: QPushButton) -> None:
-        if btn.isEnabled():
-            btn.setCursor(QCursor(Qt.PointingHandCursor))
-        else:
-            btn.setCursor(QCursor(Qt.ArrowCursor))
-
     def eventFilter(self, obj, event) -> bool:  # noqa: ANN001, N802
         if isinstance(obj, QPushButton) and event.type() == QEvent.EnabledChange:
             QTimer.singleShot(0, lambda b=obj: self._sync_button_cursor(b))
         return super().eventFilter(obj, event)
 
-
-    def _refresh_widget_style(self, widget: QWidget) -> None:
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
-        widget.update()
-
-    def _set_depth_preview_busy(self, busy: bool) -> None:
-        if hasattr(self.preview_depth_label, "setOverlayText"):
-            self.preview_depth_label.setOverlayText("计算中..." if busy else "")
-        if hasattr(self, "preview_depth_status_line"):
-            self.preview_depth_status_line.setProperty("busy", "1" if busy else "0")
-            self._refresh_widget_style(self.preview_depth_status_line)
 
     def _append_event_console_line(self, text: str) -> None:
         line = str(text).rstrip("\n")

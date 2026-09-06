@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from depth_fusion_core import PROJECT_DIR, QApplication, QTimer, importlib, short_error_message, shutil, structure_cache_root, sys
+import importlib
+import shutil
+import sys
+
+from depth_fusion_core import PROJECT_DIR, QApplication, QTimer, short_error_message, structure_cache_root
 from segmentation_pipeline.foreground import check_foreground_environment
 from segmentation_pipeline.human_parsing import check_segmentation_environment
 from segmentation_pipeline.segmentation_cache import segmentation_cache_summary

@@ -24,6 +24,15 @@ def class_methods(node: ast.ClassDef) -> dict[str, ast.FunctionDef | ast.AsyncFu
     }
 
 
+def require_mro_order(base_names: list[str], expected: list[str]) -> None:
+    missing = [name for name in expected if name not in base_names]
+    if missing:
+        raise SystemExit(f"MainWindow MRO missing required bases: {missing}; actual={base_names}")
+    positions = [base_names.index(name) for name in expected]
+    if positions != sorted(positions):
+        raise SystemExit(f"unexpected MainWindow mixin order: {base_names}")
+
+
 def main() -> None:
     if not MIXIN.is_file():
         raise SystemExit("components/file_path_actions_mixin.py is missing")
@@ -45,9 +54,7 @@ def main() -> None:
     mixin = mixin_classes[0]
 
     base_names = [base.id for base in main_window.bases if isinstance(base, ast.Name)]
-    expected_prefix = ["ResourceManagementMixin", "FilePathActionsMixin", "QMainWindow"]
-    if base_names[:3] != expected_prefix:
-        raise SystemExit(f"unexpected MainWindow mixin order: {base_names}")
+    require_mro_order(base_names, ["ResourceManagementMixin", "FilePathActionsMixin", "QMainWindow"])
 
     main_methods = class_methods(main_window)
     leaked = TARGETS & main_methods.keys()

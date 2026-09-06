@@ -136,7 +136,7 @@ jobs:
 
               worker = mixin_methods["_on_worker_log_signal"]
               assert "_append_event_console_line" in self_calls(worker)
-              assert "_event_console_listener_active" in {sub.attr for sub in ast.walk(worker) if isinstance(sub, ast.Attribute)}
+              assert "_event_console_listener_active" in constants(worker)
 
               log_source = ast.get_source_segment(MIXIN_PATH.read_text(encoding="utf-8"), mixin_methods["log"]) or ""
               clear_source = ast.get_source_segment(MIXIN_PATH.read_text(encoding="utf-8"), mixin_methods["clear_event_console"]) or ""

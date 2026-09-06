@@ -12,8 +12,17 @@ WORKERS = APP / "depth_fusion_workers.py"
 STRUCTURE = APP / "structure_workers.py"
 UI = APP / "depth_fusion_ui.py"
 
-MOVED = {"StructureCacheWorker", "ModelPreloadWorker"}
-REQUIRED_CORE_IMPORTS = {"QObject", "Signal", "event_exception", "event_log"}
+MOVED = {"StructureCacheWorker", "ModelPreloadWorker", "SegmentationCacheWorker"}
+REQUIRED_CORE_IMPORTS = {
+    "JobConfig",
+    "PROJECT_DIR",
+    "QObject",
+    "Signal",
+    "event_exception",
+    "event_log",
+    "structure_cache_root",
+}
+REQUIRED_SEGMENTATION_IMPORTS = {"generate_segmentation_sequence_cache"}
 
 
 def parse(path: Path) -> ast.Module:
@@ -72,6 +81,16 @@ def main() -> None:
     missing_core = REQUIRED_CORE_IMPORTS - core_imports
     if missing_core:
         raise SystemExit(f"structure worker authority missing core imports: {sorted(missing_core)}")
+
+    segmentation_imports = imports_from(
+        structure_tree, "segmentation_pipeline.segmentation_cache"
+    )
+    missing_segmentation = REQUIRED_SEGMENTATION_IMPORTS - segmentation_imports
+    if missing_segmentation:
+        raise SystemExit(
+            "structure worker authority missing segmentation imports: "
+            f"{sorted(missing_segmentation)}"
+        )
 
     ui_structure_imports = imports_from(ui_tree, "structure_workers")
     if not MOVED.issubset(ui_structure_imports):

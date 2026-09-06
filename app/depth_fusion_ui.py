@@ -59,10 +59,9 @@ from depth_fusion_workers import (
     DepthExportWorker,
     MeshExportWorker,
     MeshPreviewWorker,
-    SegmentationCacheWorker,
     is_structure_xyz_export_config,
 )
-from structure_workers import ModelPreloadWorker, StructureCacheWorker
+from structure_workers import ModelPreloadWorker, StructureCacheWorker, SegmentationCacheWorker
 
 
 from common.encoder_display import encoder_display_name, encoder_internal_name

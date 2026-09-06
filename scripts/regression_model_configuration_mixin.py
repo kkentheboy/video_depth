@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UI_PATH = ROOT / "app" / "depth_fusion_ui.py"
 MIXIN_PATH = ROOT / "app" / "components" / "model_configuration_mixin.py"
+DEPLOYMENT_MIXIN_PATH = ROOT / "app" / "components" / "deployment_environment_mixin.py"
 
 EXPECTED_METHODS = {
     "_looks_like_real_model_weight",
@@ -75,10 +76,13 @@ def self_attrs(fn: ast.AST) -> set[str]:
 def main() -> None:
     ui_tree = parse(UI_PATH)
     mixin_tree = parse(MIXIN_PATH)
+    deployment_tree = parse(DEPLOYMENT_MIXIN_PATH)
     ui_cls = class_node(ui_tree, "MainWindow")
     mixin_cls = class_node(mixin_tree, "ModelConfigurationMixin")
+    deployment_cls = class_node(deployment_tree, "DeploymentEnvironmentMixin")
     ui_methods = direct_methods(ui_cls)
     mixin_methods = direct_methods(mixin_cls)
+    deployment_methods = direct_methods(deployment_cls)
     ui_assignments = direct_assignments(ui_cls)
     mixin_assignments = direct_assignments(mixin_cls)
 
@@ -115,8 +119,10 @@ def main() -> None:
     assert EXPECTED_CONSTANTS <= weight_attrs, "weight filtering must continue to read the single model-scan constant authority"
 
     for caller in ("_deployment_model_resource_note", "_format_deployment_environment_lines"):
-        assert caller in ui_methods, f"expected deployment caller missing: {caller}"
-        assert "_scan_3d_model_config" in self_calls(ui_methods[caller]), f"{caller} must delegate to ModelConfigurationMixin scan"
+        assert caller in deployment_methods, f"expected deployment caller missing from DeploymentEnvironmentMixin: {caller}"
+        assert "_scan_3d_model_config" in self_calls(deployment_methods[caller]), (
+            f"{caller} must delegate to ModelConfigurationMixin scan"
+        )
     assert "_on_structure_cache_finished" in ui_methods
     assert "refresh_3d_model_status" in self_calls(ui_methods["_on_structure_cache_finished"]), (
         "structure-cache completion must continue to refresh the model configuration authority"

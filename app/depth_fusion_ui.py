@@ -94,6 +94,7 @@ from components.model_manager import LocalModelManagerDialog
 from components.resource_management_mixin import ResourceManagementMixin
 from components.file_path_actions_mixin import FilePathActionsMixin
 from components.input_validation_mixin import InputValidationMixin
+from components.input_source_state_mixin import InputSourceStateMixin
 from components.structure_cache_state_mixin import StructureCacheStateMixin
 from components.model_configuration_mixin import ModelConfigurationMixin
 from components.deployment_environment_mixin import DeploymentEnvironmentMixin
@@ -111,7 +112,7 @@ from components.widgets import (
 from components.waveform import CurveWaveformPanel
 
 
-class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
+class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationMixin, InputSourceStateMixin, StructureCacheStateMixin, ModelConfigurationMixin, DeploymentEnvironmentMixin, ProcessingRangeMixin, PreviewFrameMixin, ProjectStateMixin, JobConfigurationMixin, OutputRoutingMixin, QMainWindow):
     event_console_line = Signal(str)
 
     def __init__(self) -> None:
@@ -840,42 +841,6 @@ class MainWindow(ResourceManagementMixin, FilePathActionsMixin, InputValidationM
             self.normal_refine_spin.setEnabled(False)
         except Exception:
             pass
-
-    def on_matting_controls_changed(self) -> None:
-        pass
-
-    def _update_matting_status_label(self) -> None:
-        pass
-
-
-    def _source_mode_from_current_controls(self) -> str:
-        """The structure-XYZ workflow uses the alpha channel embedded in the main video."""
-        return "cutout_video"
-
-    def _current_source_mode(self) -> str:
-        return "cutout_video"
-
-    def _sync_source_mode_radios(self) -> None:
-        if not hasattr(self, "source_cutout_radio"):
-            return
-        for radio in (self.source_cutout_radio, self.source_matanyone_radio, self.source_external_mask_radio):
-            radio.blockSignals(True)
-            radio.setChecked(radio is self.source_cutout_radio)
-            radio.blockSignals(False)
-        self._update_conditional_visibility()
-
-    def _apply_source_mode(self, mode: str) -> None:
-        """Force the single-input workflow: main video alpha only."""
-        for widget, checked in (
-            (self.input_cutout_mask_check, True),
-        ):
-            widget.blockSignals(True)
-            widget.setChecked(bool(checked))
-            widget.blockSignals(False)
-        self._sync_source_mode_radios()
-        self._update_matting_status_label()
-        self._update_conditional_visibility()
-        self.on_external_media_changed()
 
     def _effective_pointcloud_stride(self) -> int:
         density = self.pointcloud_density_combo.currentText() if hasattr(self, "pointcloud_density_combo") else "中"

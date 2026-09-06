@@ -1495,42 +1495,6 @@ def _mesh_preview_pointcloud_bgr(points: np.ndarray, origin_vertices: np.ndarray
     return canvas
 
 
-class SegmentationCacheWorker(QObject):
-    progress = Signal(str)
-    progress_value = Signal(str, int, int)
-    finished = Signal(dict)
-    failed = Signal(str)
-
-    def __init__(self, cfg: JobConfig) -> None:
-        super().__init__()
-        self.cfg = cfg
-        self._cancel = False
-
-    def cancel(self) -> None:
-        self._cancel = True
-
-    def _log(self, text: str) -> None:
-        event_log(text, channel="SEGMENTATION_CACHE")
-        self.progress.emit(str(text))
-
-    def run(self) -> None:
-        try:
-            cache_root = structure_cache_root(self.cfg)
-            def _progress(done: int, total: int) -> None:
-                if self._cancel:
-                    raise RuntimeError("分割缓存任务已取消。")
-                self.progress_value.emit("segmentation", int(done), int(total))
-            summary = generate_segmentation_sequence_cache(
-                self.cfg,
-                cache_root,
-                project_root=PROJECT_DIR,
-                log=self._log,
-                progress=_progress,
-            )
-            self.finished.emit(summary)
-        except Exception as exc:  # noqa: BLE001
-            event_exception("逐帧分割缓存生成失败", exc, input_path=getattr(self.cfg, "input_path", ""))
-            self.failed.emit(f"{exc}\n\n{traceback.format_exc()}")
 
 
 class MeshPreviewWorker(QObject):

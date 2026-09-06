@@ -7,7 +7,8 @@ import shutil
 import traceback
 from typing import Optional
 
-from depth_fusion_core import QObject, Signal, event_exception, event_log
+from depth_fusion_core import JobConfig, PROJECT_DIR, QObject, Signal, event_exception, event_log, structure_cache_root
+from segmentation_pipeline.segmentation_cache import generate_segmentation_sequence_cache
 
 
 class StructureCacheWorker(QObject):
@@ -151,4 +152,42 @@ class ModelPreloadWorker(QObject):
             self.finished.emit("网格主流程无需旧模型预热。")
         except Exception as exc:  # noqa: BLE001
             event_exception("模型预热状态检查失败", exc)
+            self.failed.emit(f"{exc}\n\n{traceback.format_exc()}")
+
+
+class SegmentationCacheWorker(QObject):
+    progress = Signal(str)
+    progress_value = Signal(str, int, int)
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, cfg: JobConfig) -> None:
+        super().__init__()
+        self.cfg = cfg
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+
+    def _log(self, text: str) -> None:
+        event_log(text, channel="SEGMENTATION_CACHE")
+        self.progress.emit(str(text))
+
+    def run(self) -> None:
+        try:
+            cache_root = structure_cache_root(self.cfg)
+            def _progress(done: int, total: int) -> None:
+                if self._cancel:
+                    raise RuntimeError("分割缓存任务已取消。")
+                self.progress_value.emit("segmentation", int(done), int(total))
+            summary = generate_segmentation_sequence_cache(
+                self.cfg,
+                cache_root,
+                project_root=PROJECT_DIR,
+                log=self._log,
+                progress=_progress,
+            )
+            self.finished.emit(summary)
+        except Exception as exc:  # noqa: BLE001
+            event_exception("逐帧分割缓存生成失败", exc, input_path=getattr(self.cfg, "input_path", ""))
             self.failed.emit(f"{exc}\n\n{traceback.format_exc()}")

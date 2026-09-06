@@ -1,0 +1,145 @@
+name: Extract Segmentation Worker Temp
+
+on:
+  push:
+    branches: [refactor/extract-segmentation-worker-20260906]
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract segmentation worker
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import ast
+          import builtins
+          from pathlib import Path
+
+          workers_path = Path('app/depth_fusion_workers.py')
+          structure_path = Path('app/structure_workers.py')
+          ui_path = Path('app/depth_fusion_ui.py')
+          workers = workers_path.read_text(encoding='utf-8')
+          structure = structure_path.read_text(encoding='utf-8')
+          ui = ui_path.read_text(encoding='utf-8')
+
+          tree = ast.parse(workers)
+          target = 'SegmentationCacheWorker'
+          nodes = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == target]
+          if len(nodes) != 1:
+              raise SystemExit(f'expected one {target}, got {len(nodes)}')
+          node = nodes[0]
+
+          local_defs = {
+              n.name for n in tree.body
+              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name != target
+          }
+          loaded, stored, imported_inner = set(), set(), set()
+          for x in ast.walk(node):
+              if isinstance(x, ast.Name):
+                  (loaded if isinstance(x.ctx, ast.Load) else stored).add(x.id)
+              elif isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  stored.add(x.name)
+                  stored.update(a.arg for a in x.args.args + x.args.kwonlyargs)
+                  if x.args.vararg: stored.add(x.args.vararg.arg)
+                  if x.args.kwarg: stored.add(x.args.kwarg.arg)
+              elif isinstance(x, ast.ExceptHandler) and x.name:
+                  stored.add(x.name)
+              elif isinstance(x, ast.Import):
+                  imported_inner.update((a.asname or a.name.split('.')[0]) for a in x.names)
+              elif isinstance(x, ast.ImportFrom):
+                  imported_inner.update((a.asname or a.name) for a in x.names)
+
+          hidden = (loaded - stored - imported_inner - set(dir(builtins))) & local_defs
+          if hidden:
+              raise SystemExit(f'segmentation worker depends on worker-local symbols: {sorted(hidden)}')
+          expected_globals = {
+              'JobConfig', 'QObject', 'Signal', 'event_log', 'structure_cache_root',
+              'PROJECT_DIR', 'generate_segmentation_sequence_cache', 'event_exception', 'traceback'
+          }
+          global_deps = loaded - stored - imported_inner - set(dir(builtins))
+          unexpected = global_deps - expected_globals
+          if unexpected:
+              raise SystemExit(f'unexpected segmentation worker globals: {sorted(unexpected)}')
+
+          lines = workers.splitlines(keepends=True)
+          class_source = ''.join(lines[node.lineno-1:node.end_lineno]).rstrip() + '\n'
+          del lines[node.lineno-1:node.end_lineno]
+          workers_path.write_text(''.join(lines), encoding='utf-8')
+
+          core_old = 'from depth_fusion_core import QObject, Signal, event_exception, event_log\n'
+          core_new = 'from depth_fusion_core import JobConfig, PROJECT_DIR, QObject, Signal, event_exception, event_log, structure_cache_root\n'
+          if structure.count(core_old) != 1:
+              raise SystemExit('structure_workers core import shape changed')
+          structure = structure.replace(core_old, core_new, 1)
+          seg_import = 'from segmentation_pipeline.segmentation_cache import generate_segmentation_sequence_cache\n'
+          if seg_import not in structure:
+              structure = structure.replace(core_new, core_new + seg_import, 1)
+          if target in {n.name for n in ast.parse(structure).body if isinstance(n, ast.ClassDef)}:
+              raise SystemExit('SegmentationCacheWorker already exists in structure_workers')
+          structure = structure.rstrip() + '\n\n\n' + class_source
+          structure_path.write_text(structure, encoding='utf-8')
+
+          ui_tree = ast.parse(ui)
+          worker_imports = [n for n in ui_tree.body if isinstance(n, ast.ImportFrom) and n.module == 'depth_fusion_workers']
+          if len(worker_imports) != 1:
+              raise SystemExit(f'expected one depth_fusion_workers import, got {len(worker_imports)}')
+          imp = worker_imports[0]
+          names = [(a.name, a.asname) for a in imp.names]
+          if target not in {name for name, _ in names}:
+              raise SystemExit('UI does not import SegmentationCacheWorker from monolith')
+          remaining = [(name, alias) for name, alias in names if name != target]
+          rendered = 'from depth_fusion_workers import (\n' + ''.join(
+              f'    {name}' + (f' as {alias}' if alias else '') + ',\n' for name, alias in remaining
+          ) + ')\n'
+          ui_lines = ui.splitlines(keepends=True)
+          ui_lines[imp.lineno-1:imp.end_lineno] = [rendered]
+          ui = ''.join(ui_lines)
+          structure_imports = [n for n in ast.parse(ui).body if isinstance(n, ast.ImportFrom) and n.module == 'structure_workers']
+          if len(structure_imports) != 1:
+              raise SystemExit(f'expected one structure_workers import, got {len(structure_imports)}')
+          simp = structure_imports[0]
+          imported = [(a.name, a.asname) for a in simp.names]
+          if target not in {name for name, _ in imported}:
+              imported.append((target, None))
+          srendered = 'from structure_workers import ' + ', '.join(
+              name + (f' as {alias}' if alias else '') for name, alias in imported
+          ) + '\n'
+          ui_lines = ui.splitlines(keepends=True)
+          ui_lines[simp.lineno-1:simp.end_lineno] = [srendered]
+          ui_path.write_text(''.join(ui_lines), encoding='utf-8')
+
+          for path in sorted(Path('app').rglob('*.py')):
+              t = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+              if path == structure_path:
+                  for n in t.body:
+                      if isinstance(n, ast.ImportFrom) and n.module == 'depth_fusion_workers':
+                          raise SystemExit('structure_workers must not import depth_fusion_workers')
+              for n in t.body:
+                  if isinstance(n, ast.ImportFrom) and n.module == 'depth_fusion_workers':
+                      if target in {a.name for a in n.names}:
+                          raise SystemExit(f'{path} still imports SegmentationCacheWorker from monolith')
+
+          ast.parse(workers_path.read_text(encoding='utf-8'))
+          ast.parse(structure_path.read_text(encoding='utf-8'))
+          ast.parse(ui_path.read_text(encoding='utf-8'))
+          print('segmentation worker extraction: PASS')
+          PY
+          python -m compileall -q app
+      - name: Commit extraction and self-delete
+        shell: bash
+        run: |
+          rm .github/workflows/extract-segmentation-worker-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/depth_fusion_workers.py app/depth_fusion_ui.py app/structure_workers.py .github/workflows/extract-segmentation-worker-temp.yml
+          git commit -m "refactor: move segmentation cache worker to structure workers"
+          git push
